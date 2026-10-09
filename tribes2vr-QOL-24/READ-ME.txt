@@ -1,0 +1,75 @@
+TRIBES2VR - BUILD QOL-24    HEALTH AND ENERGY
+==============================================
+
+WHAT TO PRESS:      nothing new
+WHAT TO LOOK FOR:   two bars low in your view. The top one is HEALTH, the
+                    bottom one is ENERGY.
+                      - jet:        the ENERGY bar should drain and refill
+                      - take a hit: the HEALTH bar should drop and stay down
+                    Dull red and empty = still no data. Filled = working.
+WHAT TO SEND BACK:  tribes2vr.log
+
+
+WHAT CHANGED
+=============
+I stopped asking the game's script layer for these numbers and read them out
+of the player object directly.
+
+The QOL-23 probe answered its question. One script call, one line:
+
+    ctrl=[6958] isObj=1 ctrlCls=[] dashCls=[GuiDashBoardCtrl]
+                                            scCls=[GameConnection]
+
+In that single call, dashboardHud answered. ServerConnection answered. The
+control object - a live object that isObject() accepted on the line before -
+answered nothing. Empty, every call, every build. That is what has been
+happening since QOL-7. The script route was never going to work, and
+re-shaping the query was never going to change that.
+
+
+WHERE THE NEW NUMBERS COME FROM
+================================
+Not a guess, not a scan, not engine source - disassembled out of your
+Tribes2.exe:
+
+  ShapeBase::getDamageValue()  at 005EA7B0
+      fld   dword [ecx + 0x7F0]     <- mDamage
+      mov   eax,  [ecx + 0x2D0]     <- mDataBlock
+      fdiv  dword [eax + 0x84]      <- maxDamage
+
+  ShapeBase::getEnergyValue()  at 005EA1F0
+      mov   eax,  [ecx + 0x2D0]     <- mDataBlock
+      fld   dword [eax + 0x80]      <- maxEnergy
+      fld   dword [ecx + 0x77C]     <- mEnergy
+
+Those are the exact two functions the game's own health and energy bars
+call, so the mod is now doing the game's arithmetic, not a reinterpretation
+of it.
+
+The reason I trust it before you test it: mDataBlock at +0x2D0 shows up in
+BOTH of those functions - and +0x2D0 is an offset this mod has already been
+using correctly on your machine for many builds, to drive your arms. The
+disassembly agrees with a number that was already proven in the field.
+
+Both functions are byte-checked in memory at startup, the same way
+Con::evaluate is. If they ever don't match, the log says so and the bars
+stay empty instead of reading a wrong address.
+
+Side effect: the 120ms script poll that ran every session is gone. Nothing
+about health or energy costs a script call any more.
+
+
+IF IT STILL DOESN'T WORK
+=========================
+The log will say which of these it is, in plain words - there is no silent
+failure path left:
+
+  "VITALS LIVE: health ... energy ... [mDamage ... / maxDamage ...]"
+      -> it is reading real numbers; send me that line
+
+  "VITALS: ... byte signature mismatch ..."
+      -> your Tribes2.exe is not the one I disassembled
+
+  neither line at all
+      -> the control object was never valid; that is a different bug and
+         the rest of the log will show it
